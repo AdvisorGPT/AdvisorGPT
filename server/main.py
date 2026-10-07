@@ -1,5 +1,6 @@
 import os
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -36,10 +37,17 @@ mcp = FastMCP(
 
 mcp_app = mcp.streamable_http_app()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with mcp.session_manager.run():
+        yield
+
+
 app = FastAPI(
     title="GPT Drive Connector",
     version="1.1.0",
-    lifespan=mcp.session_manager.run,
+    lifespan=lifespan,
 )
 
 def require_api_key_if_sa(request: Request):
