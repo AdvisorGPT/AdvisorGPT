@@ -5,4 +5,4 @@ google-api-python-client
 pdfminer.six
 pydantic
 python-multipart
-mcp
+mcp<2
