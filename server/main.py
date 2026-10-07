@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from mcp.server.fastmcp import FastMCP
 
 AUTH_MODE = os.environ.get("AUTH_MODE", "SERVICE_ACCOUNT").upper()
 ALLOWED_FOLDER_ID = os.environ.get("ALLOWED_FOLDER_ID", "").strip()
@@ -27,7 +28,17 @@ from pdfminer.high_level import extract_text
 
 API_KEY = os.environ.get("API_KEY_FOR_GPT", "").strip()  # required in SA mode
 
-app = FastAPI(title="GPT Drive Connector", version="1.1.0")
+mcp = FastMCP(
+    "AdvisorGPT Drive",
+    stateless_http=True,
+    json_response=True,
+)
+
+app = FastAPI(
+    title="GPT Drive Connector",
+    version="1.1.0",
+    lifespan=mcp.session_manager.run,
+)
 
 def require_api_key_if_sa(request: Request):
     if AUTH_MODE == "SERVICE_ACCOUNT":
@@ -99,3 +110,82 @@ def file_text(request: Request, file_id: str):
         return JSONResponse({"fileId": file_id, "name": name, "mimeType": mime, "text": text})
 
     raise HTTPException(status_code=415, detail=f"Unsupported mimeType for text extraction: {mime}")
+
+# -------------------------------------------------------------------
+# MCP tools for the AdvisorGPT Plugin
+# -------------------------------------------------------------------
+
+@mcp.tool()
+def list_drive_files(page_size: int = 25) -> dict:
+    """List files in the approved AdvisorGPT Google Drive folder."""
+    drive = build_sa_drive()
+    files = sa_list(
+        drive,
+        ALLOWED_FOLDER_ID,
+        page_size=page_size
+    )
+    return {"files": files}
+
+
+@mcp.tool()
+def search_drive(query: str, page_size: int = 25) -> dict:
+    """Search for files by filename in the approved AdvisorGPT Google Drive folder."""
+    drive = build_sa_drive()
+    files = sa_search(
+        drive,
+        ALLOWED_FOLDER_ID,
+        query,
+        page_size=page_size
+    )
+    return {"files": files}
+
+
+@mcp.tool()
+def get_file_meta(file_id: str) -> dict:
+    """Get metadata for a file in the approved AdvisorGPT Google Drive folder."""
+    drive = build_sa_drive()
+    meta = sa_meta(drive, file_id)
+
+    ensure_in_allowed_folder(drive, meta)
+
+    return meta
+
+
+@mcp.tool()
+def get_file_text(file_id: str) -> dict:
+    """Extract text from an approved Google Doc or PDF."""
+    drive = build_sa_drive()
+    meta = sa_meta(drive, file_id)
+
+    ensure_in_allowed_folder(drive, meta)
+
+    mime = meta.get("mimeType", "")
+
+    if mime == "application/vnd.google-apps.document":
+        name, stream = sa_export(drive, file_id)
+        text = stream.read().decode("utf-8", errors="ignore")
+
+        return {
+            "fileId": file_id,
+            "name": name,
+            "mimeType": mime,
+            "text": text,
+        }
+
+    if mime == "application/pdf":
+        name, _, stream = sa_download(drive, file_id)
+        text = extract_text(stream)
+
+        return {
+            "fileId": file_id,
+            "name": name,
+            "mimeType": mime,
+            "text": text,
+        }
+
+    raise ValueError(
+        f"Unsupported mimeType for text extraction: {mime}"
+    )
+
+# Mount the MCP Streamable HTTP application.
+app.mount("/mcp", mcp.streamable_http_app())
