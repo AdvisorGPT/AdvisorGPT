@@ -34,6 +34,8 @@ mcp = FastMCP(
     json_response=True,
 )
 
+mcp_app = mcp.streamable_http_app()
+
 app = FastAPI(
     title="GPT Drive Connector",
     version="1.1.0",
@@ -188,4 +190,4 @@ def get_file_text(file_id: str) -> dict:
     )
 
 # Mount the MCP Streamable HTTP application.
-app.mount("/mcp", mcp.streamable_http_app())
+app.mount("/mcp", mcp_app)
