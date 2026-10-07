@@ -6,7 +6,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
 
 AUTH_MODE = os.environ.get("AUTH_MODE", "SERVICE_ACCOUNT").upper()
 ALLOWED_FOLDER_ID = os.environ.get("ALLOWED_FOLDER_ID", "").strip()
@@ -36,19 +35,7 @@ mcp = FastMCP(
     json_response=True,
 )
 
-mcp_app = mcp.streamable_http_app(
-    streamable_http_path="/",
-    transport_security=TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=[
-            "advisorgpt-production-0c03.up.railway.app",
-            "advisorgpt-production-0c03.up.railway.app:*",
-        ],
-        allowed_origins=[
-            "https://advisorgpt-production-0c03.up.railway.app",
-        ],
-    ),
-)
+mcp_app = mcp.streamable_http_app()
 
 
 @asynccontextmanager
